@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG TARGETPLATFORM
+
 ARG VERSION=dev
 ARG VCS_REF=unknown
 ARG VCS_URL=https://example.invalid
