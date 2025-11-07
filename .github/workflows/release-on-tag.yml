@@ -35,8 +35,21 @@ jobs:
         with:
           images: ghcr.io/nashspence/vcrunch
           tags: |
+            # always tag with the git tag
             type=ref,event=tag
-            type=raw,value=latest
+
+            # stable releases (no '-') get "latest"
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+            # "next" for: stable OR alpha/beta/rc
+            type=raw,value=next,enable=${{ !contains(github.ref_name, '-') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+
+            # specific prerelease tags
+            type=raw,value=alpha,enable=${{ contains(github.ref_name, 'alpha') }}
+            type=raw,value=beta,enable=${{ contains(github.ref_name, 'beta') }}
+            type=raw,value=rc,enable=${{ contains(github.ref_name, 'rc') }}
+
+            # still push sha tag
             type=sha,prefix=
 
       - name: Build & push
