@@ -49,9 +49,6 @@ jobs:
             type=raw,value=beta,enable=${{ contains(github.ref_name, 'beta') }}
             type=raw,value=rc,enable=${{ contains(github.ref_name, 'rc') }}
 
-            # still push sha tag
-            type=sha,prefix=
-
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
