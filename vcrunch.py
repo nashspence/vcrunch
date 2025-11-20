@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-
-import argparse
 import hashlib
 import json
 import logging
@@ -13,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import types
 from datetime import datetime, timezone
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, TypeVar, cast
@@ -34,6 +33,56 @@ FFMPEG_OUTPUT_FLAGS = [
 ]
 
 VERBOSE_LEVEL = 0
+
+
+def _split_env_list(value: str) -> List[str]:
+    parts = re.split(r"[\n,]", value)
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _env_list(name: str, default: Sequence[str]) -> List[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return list(default)
+    items = _split_env_list(raw)
+    if items:
+        return items
+    return list(default)
+
+
+def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        logging.error("invalid integer for %s: %s", name, raw)
+        sys.exit(2)
+
+
+def _env_float(name: str, default: Optional[float] = None) -> Optional[float]:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        logging.error("invalid float for %s: %s", name, raw)
+        sys.exit(2)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    logging.error("invalid boolean for %s: %s", name, raw)
+    sys.exit(2)
 
 
 class _StreamExportRequired(TypedDict):
@@ -1905,88 +1954,30 @@ def copy_assets(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Encode videos (SVT-AV1) with resume manifest. Non-video files are copied to the output directory."
+    inputs = _env_list("VCRUNCH_INPUTS", ["/in"])
+    args = types.SimpleNamespace(
+        input=inputs,
+        paths_from=os.getenv("VCRUNCH_PATHS_FROM"),
+        pattern=os.getenv("VCRUNCH_PATTERN"),
+        media=os.getenv("VCRUNCH_MEDIA"),
+        target_size=os.getenv("VCRUNCH_TARGET_SIZE"),
+        constant_quality=_env_int("VCRUNCH_CONSTANT_QUALITY"),
+        audio_bitrate=os.getenv("VCRUNCH_AUDIO_BITRATE", "128k"),
+        safety_overhead=_env_float("VCRUNCH_SAFETY_OVERHEAD"),
+        output_dir=os.getenv("VCRUNCH_OUTPUT_DIR", "/out"),
+        manifest_name=os.getenv("VCRUNCH_MANIFEST_NAME", MANIFEST_NAME),
+        name_suffix=os.getenv("VCRUNCH_NAME_SUFFIX", DEFAULT_SUFFIX),
+        move_if_fit=_env_bool("VCRUNCH_MOVE_IF_FIT", False),
+        stage_dir=os.getenv("VCRUNCH_STAGE_DIR", "/work"),
+        list_errors=_env_bool("VCRUNCH_LIST_ERRORS", False),
+        svt_lp=_env_int(
+            "VCRUNCH_SVT_LP", default=_env_int("SVT_LP", default=5)
+        ),
+        verbose=max(_env_int("VCRUNCH_VERBOSE", 0) or 0, 0),
     )
-    ap.add_argument(
-        "--input",
-        action="append",
-        default=["/in"],
-        help="File or directory (repeatable).",
-    )
-    ap.add_argument("--paths-from", help="Newline-delimited paths, or '-' for stdin.")
-    ap.add_argument(
-        "--pattern", default=None, help="Optional glob to filter inputs (e.g., '*')."
-    )
-    ap.add_argument(
-        "--media",
-        help="Optical media preset. Choices: cdr700, dvd5, dvd9, dvd10, dvd18, bdr25, bdr50, bdr100, bdr128.",
-    )
-    ap.add_argument(
-        "--target-size",
-        default=None,
-        help="Total target size (e.g., 23.30G, 7.95G, 650M).",
-    )
-    ap.add_argument(
-        "--constant-quality",
-        type=int,
-        default=None,
-        help="Use SVT-AV1 constant quality (CRF) instead of computing a target bitrate.",
-    )
-    ap.add_argument(
-        "--audio-bitrate", default="128k", help="Per-title audio bitrate (e.g., 128k)."
-    )
-    ap.add_argument(
-        "--safety-overhead",
-        type=float,
-        default=None,
-        help="Reserve fraction for mux/fs overhead.",
-    )
-    ap.add_argument("--output-dir", default="/out", help="Output directory.")
-    ap.add_argument(
-        "--manifest-name",
-        default=MANIFEST_NAME,
-        help="Manifest filename under output dir.",
-    )
-    ap.add_argument(
-        "--name-suffix",
-        default=DEFAULT_SUFFIX,
-        help="Suffix before extension for encoded files.",
-    )
-    ap.add_argument(
-        "--move-if-fit",
-        action="store_true",
-        help="Move files instead of copying when inputs fit within target size without re-encoding.",
-    )
-    ap.add_argument(
-        "--stage-dir",
-        default="/work",
-        help="Local work dir inside the container; inputs are staged here before encoding.",
-    )
-    ap.add_argument(
-        "--list-errors",
-        action="store_true",
-        help="List manifest items with errors and exit.",
-    )
-    ap.add_argument(
-        "--svt-lp",
-        type=int,
-        default=int(os.getenv("SVT_LP", "5")),
-        help="Number of SVT-AV1 lookahead processes (lp parameter).",
-    )
-    ap.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase verbosity (-v, -vv).",
-    )
-    args = ap.parse_args()
 
-    level = (
-        logging.WARNING
-        if args.verbose == 0
-        else (logging.INFO if args.verbose == 1 else logging.DEBUG)
+    level = logging.WARNING if args.verbose == 0 else (
+        logging.INFO if args.verbose == 1 else logging.DEBUG
     )
     global VERBOSE_LEVEL
     VERBOSE_LEVEL = args.verbose
@@ -1995,13 +1986,13 @@ def main() -> None:
     )
 
     if args.constant_quality is not None and args.constant_quality < 0:
-        logging.error("--constant-quality must be non-negative")
+        logging.error("VCRUNCH_CONSTANT_QUALITY must be non-negative")
         sys.exit(2)
 
     canon_media = _normalize_media(args.media)
     if args.media and not canon_media:
         logging.error(
-            "unknown --media value: %s; valid: %s",
+            "unknown VCRUNCH_MEDIA value: %s; valid: %s",
             args.media,
             ", ".join(sorted(MEDIA_PRESETS.keys())),
         )

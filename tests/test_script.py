@@ -23,6 +23,34 @@ script = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(script)
 
 
+_CONFIG_VARS = [
+    "VCRUNCH_INPUTS",
+    "VCRUNCH_PATHS_FROM",
+    "VCRUNCH_PATTERN",
+    "VCRUNCH_MEDIA",
+    "VCRUNCH_TARGET_SIZE",
+    "VCRUNCH_CONSTANT_QUALITY",
+    "VCRUNCH_AUDIO_BITRATE",
+    "VCRUNCH_SAFETY_OVERHEAD",
+    "VCRUNCH_OUTPUT_DIR",
+    "VCRUNCH_MANIFEST_NAME",
+    "VCRUNCH_NAME_SUFFIX",
+    "VCRUNCH_MOVE_IF_FIT",
+    "VCRUNCH_STAGE_DIR",
+    "VCRUNCH_LIST_ERRORS",
+    "VCRUNCH_SVT_LP",
+    "SVT_LP",
+    "VCRUNCH_VERBOSE",
+]
+
+
+def set_env(monkeypatch, **overrides: str) -> None:
+    for key in _CONFIG_VARS:
+        monkeypatch.delenv(key, raising=False)
+    for key, value in overrides.items():
+        monkeypatch.setenv(key, value)
+
+
 def test_parse_size():
     assert script.parse_size("1") == 1
     assert script.parse_size("1k") == 1024
@@ -325,19 +353,14 @@ def test_video_copy_budget_uses_measured_bytes(monkeypatch, tmp_path, caplog):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "40M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "-v",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="40M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_VERBOSE="1",
+    )
 
     monkeypatch.setattr(
         script,
@@ -902,18 +925,11 @@ def test_main_keeps_original_name_when_larger(monkeypatch, tmp_path):
     out_dir = tmp_path / "out"
     stage_dir = tmp_path / "stage"
 
-    monkeypatch.setattr(
-        script.sys,
-        "argv",
-        [
-            "vcrunch",
-            "--input",
-            str(src),
-            "--output-dir",
-            str(out_dir),
-            "--stage-dir",
-            str(stage_dir),
-        ],
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src),
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
     )
 
     monkeypatch.setattr(
@@ -1090,17 +1106,11 @@ def test_main_list_errors(monkeypatch, tmp_path, capsys):
     }
     (out_dir / script.MANIFEST_NAME).write_text(json.dumps(manifest))
 
-    monkeypatch.setattr(
-        script.sys,
-        "argv",
-        [
-            "vcrunch",
-            "--output-dir",
-            str(out_dir),
-            "--stage-dir",
-            str(stage_dir),
-            "--list-errors",
-        ],
+    set_env(
+        monkeypatch,
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_LIST_ERRORS="1",
     )
 
     script.main()
@@ -1130,16 +1140,15 @@ def test_copy_if_fits(monkeypatch, tmp_path):
     (src_dir / "a.mp4").write_text("a")
     (src_dir / "b.txt").write_text("b")
     out_dir = tmp_path / "out"
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1169,17 +1178,16 @@ def test_move_if_fits(monkeypatch, tmp_path):
     video = src_dir / "a.mp4"
     video.write_text("a")
     out_dir = tmp_path / "out"
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-        "--move-if-fit",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_MOVE_IF_FIT="1",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1201,20 +1209,14 @@ def test_constant_quality_groups_and_command(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "--constant-quality",
-        "32",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_CONSTANT_QUALITY="32",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1397,20 +1399,14 @@ def test_constant_quality_ignores_fit_short_circuit(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "10M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "--constant-quality",
-        "28",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="10M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_CONSTANT_QUALITY="28",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1505,20 +1501,14 @@ def test_mkvmerge_sets_creation_date_and_attachments(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "--constant-quality",
-        "32",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_CONSTANT_QUALITY="32",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1704,20 +1694,14 @@ def test_mov_with_data_stream_outputs_mkv(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "--constant-quality",
-        "32",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_CONSTANT_QUALITY="32",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -1871,18 +1855,13 @@ def test_low_bitrate_audio_stream_copied(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "60M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="60M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -2004,18 +1983,13 @@ def test_low_bitrate_video_stream_copied(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "60M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="60M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
@@ -2144,20 +2118,14 @@ def test_sidecar_files_are_renamed(monkeypatch, tmp_path):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
 
-    argv = [
-        "vcrunch.py",
-        "--input",
-        str(src_dir),
-        "--target-size",
-        "1M",
-        "--output-dir",
-        str(out_dir),
-        "--stage-dir",
-        str(stage_dir),
-        "--constant-quality",
-        "30",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+    set_env(
+        monkeypatch,
+        VCRUNCH_INPUTS=str(src_dir),
+        VCRUNCH_TARGET_SIZE="1M",
+        VCRUNCH_OUTPUT_DIR=str(out_dir),
+        VCRUNCH_STAGE_DIR=str(stage_dir),
+        VCRUNCH_CONSTANT_QUALITY="30",
+    )
     monkeypatch.setattr(
         script,
         "probe_media_info",
