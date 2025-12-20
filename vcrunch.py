@@ -3270,7 +3270,7 @@ def main() -> None:
                         ]
                     codec_opts += [
                         f"-preset:v:{out_idx}",
-                        "4",
+                        "5",
                         f"-svtav1-params:v:{out_idx}",
                         f"lp={args.svt_lp}",
                         f"-fps_mode:v:{out_idx}",
